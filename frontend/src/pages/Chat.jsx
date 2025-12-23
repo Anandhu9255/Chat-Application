@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import Sidebar from '../components/Sidebar'
 import ChatWindow from '../components/ChatWindow'
 import socket from '../services/socket'
@@ -6,70 +6,117 @@ import api from '../services/api'
 
 export default function Chat(){
   const [chats, setChats] = useState([])
-  const [activeChat, setActiveChat] = useState(null)
+  const [activeChatId, setActiveChatId] = useState(null)
   const activeChatRef = useRef(null)
+
+  const activeChat = useMemo(() => {
+    return chats.find(c => String(c._id) === String(activeChatId)) || null;
+  }, [chats, activeChatId]);
+
+  useEffect(() => {
+    activeChatRef.current = activeChat;
+  }, [activeChat]);
 
   useEffect(()=>{
     const init = async()=>{
       try{
         const res = await api.get('/chats')
         setChats(res.data)
+        
+        // Sync online status as soon as data loads
+        if (socket.connected) {
+          socket.emit('request-online-status');
+        }
       }catch(err){ console.error(err) }
     }
     init()
     
-    const token = api.getToken()
-    if(token){
-      socket.emit('setup', api.getUserIdFromToken())
-    }
+    const userId = api.getUserIdFromToken();
+    if(userId) socket.emit('setup', userId);
+
+    // Re-sync whenever the socket connects/reconnects
+    const onConnect = () => {
+      socket.emit('request-online-status');
+      if(userId) socket.emit('setup', userId);
+    };
+
+    const handleOnlineList = (onlineIds) => {
+      setChats(prev => prev.map(chat => ({
+        ...chat,
+        users: chat.users.map(u => ({
+          ...u,
+          isOnline: onlineIds.includes(String(u._id))
+        }))
+      })));
+    };
+
+    const handleUserOnline = (userId) => {
+      setChats(prev => prev.map(chat => ({
+        ...chat,
+        users: chat.users.map(u => 
+          String(u._id) === String(userId) ? { ...u, isOnline: true } : u
+        )
+      })));
+    };
+
+    const handleUserOffline = ({ userId, lastSeen }) => {
+      setChats(prev => prev.map(chat => ({
+        ...chat,
+        users: chat.users.map(u => 
+          String(u._id) === String(userId) ? { ...u, isOnline: false, lastSeen } : u
+        )
+      })));
+    };
     
     const handleIncoming = (message) => {
       setChats(prev => {
-        if(!message || !message.chat) return prev
-        const chatId = message.chat._id || message.chat
-        const existing = prev.find(c => String(c._id) === String(chatId))
-        let updated = prev.filter(c => String(c._id) !== String(chatId))
-        if(existing){
-          const merged = { ...existing, latestMessage: message }
-          if(!activeChatRef.current || String(activeChatRef.current._id) !== String(chatId)){
-            merged.unreadCount = (merged.unreadCount || 0) + 1
+        if(!message || !message.chat) return prev;
+        const chatId = message.chat._id || message.chat;
+        
+        return prev.map(chat => {
+          if (String(chat._id) === String(chatId)) {
+            return { 
+              ...chat, 
+              latestMessage: message,
+              unreadCount: (activeChatRef.current?._id !== chatId) 
+                ? (chat.unreadCount || 0) + 1 
+                : 0
+            };
           }
-          updated = [merged, ...prev.filter(c => String(c._id) !== String(chatId))]
-        } else {
-          const placeholder = { _id: chatId, users: message.chat.users || [], latestMessage: message, unreadCount: (!activeChatRef.current || String(activeChatRef.current._id) !== String(chatId)) ? 1 : 0 }
-          updated = [placeholder, ...prev]
-        }
-        return updated
-      })
-    }
+          return chat;
+        });
+      });
+    };
 
-    socket.on('receive_message', handleIncoming)
+    socket.on('connect', onConnect);
+    socket.on('online-users-list', handleOnlineList);
+    socket.on('user-online', handleUserOnline);
+    socket.on('user-offline', handleUserOffline);
+    socket.on('receive_message', handleIncoming);
+
     return () => {
-      socket.off('receive_message', handleIncoming)
+      socket.off('connect', onConnect);
+      socket.off('online-users-list', handleOnlineList);
+      socket.off('user-online', handleUserOnline);
+      socket.off('user-offline', handleUserOffline);
+      socket.off('receive_message', handleIncoming);
     }
   },[])
 
-  useEffect(()=>{ activeChatRef.current = activeChat },[activeChat])
-
   return (
-    /* FIXED: Added gap-0, p-0, and m-0 to the main wrapper to remove gaps 1 and 2 */
     <div className="flex h-screen w-screen m-0 p-0 gap-0 overflow-hidden bg-[#0b141a]">
-      
-      {/* Sidebar: Fixed width to prevent it from collapsing */}
       <Sidebar 
         chats={chats} 
         setChats={setChats} 
         activeChat={activeChat} 
         onSelect={(c)=>{
-          setActiveChat(c)
+          setActiveChatId(c._id)
           setChats(prev => prev.map(x => x._id === c._id ? { ...x, unreadCount: 0 } : x))
-          try{ socket.emit('message read', c._id) }catch(e){}
+          socket.emit('message read', c._id)
         }} 
       />
-
-      {/* ChatWindow: flex-1 forces it to touch the absolute right edge (Gap 3) */}
       <div className="flex-1 h-full">
-        <ChatWindow chat={activeChat} />
+        <ChatWindow key={activeChatId} chat={activeChat} />
       </div>
     </div>
   )

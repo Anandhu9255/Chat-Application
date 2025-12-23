@@ -38,18 +38,43 @@ export default function Sidebar({ chats = [], setChats, activeChat, onSelect }){
       })
     }
 
+    const handleStatusUpdate = (userId, isOnline, lastSeen = null) => {
+      setChats(prev => prev.map(chat => ({
+        ...chat,
+        users: chat.users.map(u => {
+          if (String(u._id) === String(userId)) {
+            return { ...u, isOnline, lastSeen: lastSeen || u.lastSeen };
+          }
+          return u;
+        })
+      })));
+    };
+
+    const onUserOnline = (userId) => handleStatusUpdate(userId, true);
+    const onUserOffline = ({ userId, lastSeen }) => handleStatusUpdate(userId, false, lastSeen);
+
     socket.on('receive_message', onReceive)
+    socket.on('user-online', onUserOnline);
+    socket.on('user-offline', onUserOffline);
+
     return ()=>{
       mounted = false
       socket.off('receive_message', onReceive)
+      socket.off('user-online', onUserOnline);
+      socket.off('user-offline', onUserOffline);
     }
-  },[setChats, activeChat])
+  }, [setChats, activeChat])
 
   const handleSelect = (c) => { onSelect && onSelect(c) }
 
+  const filteredChats = chats.filter(c => {
+    const others = (c.users || []).filter(u => String(u._id) !== String(me));
+    const name = others.map(u => u.name).join(', ').toLowerCase();
+    return name.includes(q.toLowerCase());
+  });
+
   return (
     <aside className="flex h-full w-[350px] md:w-[400px] flex-shrink-0 bg-transparent m-0 p-0">
-      {/* Left rail - Contains only Logout now */}
       <div className="w-12 bg-[#0f1619] h-full flex flex-col items-center py-3">
         <div className="flex-1" />
         <button onClick={() => { try{ api.clearToken(); socket && socket.disconnect(); navigate('/login') }catch(e){} }} className="p-2 rounded text-gray-400 hover:text-white" title="Logout">
@@ -58,7 +83,6 @@ export default function Sidebar({ chats = [], setChats, activeChat, onSelect }){
       </div>
 
       <div className="flex-1 bg-[#111b21] h-full flex flex-col border-r border-gray-700">
-        {/* Header - Fixed: Removed the profile icon and made "Chats" bigger */}
         <div className="h-16 flex items-center px-4">
           <h1 className="text-2xl font-bold text-white tracking-wide">Chats</h1>
         </div>
@@ -76,15 +100,22 @@ export default function Sidebar({ chats = [], setChats, activeChat, onSelect }){
 
         <div className="flex-1 overflow-y-auto scrollbar-dark">
           <ul className="space-y-0.5">
-            {chats.map(c => {
+            {filteredChats.map(c => {
               const others = (c.users || []).filter(u => String(u._id) !== String(me))
+              const otherUser = others[0]
               const name = others.map(u=>u.name).join(', ') || 'Unknown'
               const last = c.latestMessage
               const isActive = activeChat && String(activeChat._id) === String(c._id)
+              
               return (
                 <li key={c._id} className={`flex items-center cursor-pointer p-3 border-b border-[#202c33]/30 ${isActive ? 'bg-[#2a3942]' : 'hover:bg-[#202c33]'}`} onClick={()=>handleSelect(c)}>
-                  <div className="w-12 h-12 rounded-full bg-gray-600 flex-shrink-0 flex items-center justify-center text-lg font-bold text-white">
-                    {(name[0] || '?').toUpperCase()}
+                  <div className="relative flex-shrink-0">
+                    <div className="w-12 h-12 rounded-full bg-gray-600 flex items-center justify-center text-lg font-bold text-white">
+                      {(name[0] || '?').toUpperCase()}
+                    </div>
+                    {otherUser?.isOnline && (
+                      <div className="absolute bottom-0 right-0 w-3 h-3 bg-[#00a884] border-2 border-[#111b21] rounded-full"></div>
+                    )}
                   </div>
                   <div className="ml-3 flex-1 min-w-0">
                     <div className="flex justify-between items-center">

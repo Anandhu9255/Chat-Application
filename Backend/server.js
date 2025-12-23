@@ -3,26 +3,19 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
-const mongoose = require('mongoose'); // Added for ID casting
+const mongoose = require('mongoose');
 const connectDB = require('./config/db');
 const authRoutes = require('./routes/auth');
 const chatRoutes = require('./routes/chat');
 const messageRoutes = require('./routes/message');
 const userRoutes = require('./routes/users');
+const User = require('./models/User');
+const Message = require('./models/Message');
+const jwt = require('jsonwebtoken');
 
 const app = express();
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
-const mongoSanitize = require('express-mongo-sanitize');
-
-// Security middleware
-app.use(helmet());
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 app.use(express.json());
-app.use(mongoSanitize());
-
-const apiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 200 });
-app.use('/api/', apiLimiter);
 
 connectDB();
 
@@ -35,109 +28,85 @@ app.get('/', (req, res) => res.send('Chat backend running'));
 
 const httpServer = http.createServer(app);
 const io = new Server(httpServer, { cors: { origin: process.env.CORS_ORIGIN || '*' } });
-
 app.set('io', io);
 
-const jwt = require('jsonwebtoken');
-const User = require('./models/User');
-
 const onlineUsers = {}; 
-const socketUser = {}; 
 
 io.use(async (socket, next) => {
   try {
-    const token = socket.handshake.auth?.token || (socket.handshake.headers && socket.handshake.headers.authorization && socket.handshake.headers.authorization.split(' ')[1]);
+    const token = socket.handshake.auth?.token || (socket.handshake.headers?.authorization?.split(' ')[1]);
     if (!token) return next(new Error('Authentication error'));
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     socket.userId = decoded.id;
-    const user = await User.findById(decoded.id).select('-password');
-    if (!user) return next(new Error('Authentication error'));
-    socket.user = user;
     return next();
   } catch (err) {
-    console.error('Socket auth error', err.message);
     return next(new Error('Authentication error'));
   }
 });
 
 io.on('connection', (socket) => {
-  console.log('Socket connected', socket.id, 'user:', socket.userId || 'anonymous');
-
   if (socket.userId) {
+    User.findByIdAndUpdate(socket.userId, { isOnline: true }).catch(e => console.error(e));
     onlineUsers[socket.userId] = socket.id;
-    socketUser[socket.id] = socket.userId;
     socket.join(socket.userId);
+    
+    // Broadcast to EVERYONE that I am online
     io.emit('user-online', socket.userId);
   }
 
+  // Answer requests for the full online list
+  socket.on('request-online-status', () => {
+    socket.emit('online-users-list', Object.keys(onlineUsers));
+  });
+
   socket.on('setup', (userId) => {
-    if (!userId) return;
-    onlineUsers[userId] = socket.id;
-    socketUser[socket.id] = userId;
     socket.join(userId);
+    // Double-check broadcast when setup is called
     io.emit('user-online', userId);
   });
 
-  socket.on('join chat', (chatId) => {
-    if (!chatId) return;
-    socket.join(chatId);
-  });
-
-  socket.on('join_chat', (chatId) => {
-    if (!chatId) return;
-    socket.join(chatId);
-  });
-
+  socket.on('join chat', (chatId) => socket.join(chatId));
+  
   socket.on('typing', (chatId) => socket.to(chatId).emit('typing', chatId));
   socket.on('stop typing', (chatId) => socket.to(chatId).emit('stop typing', chatId));
 
   socket.on('new message', (message) => {
-    try {
-      const chatId = (message && (message.chat || message.chatId || message.conversationId));
-      if (!chatId) return;
-      io.to(String(chatId)).emit('receive_message', message);
-    } catch (err) {
-      console.error('Socket new message error', err);
-    }
+    const chatId = message.chat?._id || message.chat;
+    if (chatId) io.to(String(chatId)).emit('receive_message', message);
   });
 
-  // FIXED: "message read" logic with explicit ObjectId casting
   socket.on('message read', async (chatId) => {
     try {
       if (!socket.userId || !chatId) return;
-      
-      const Message = require('./models/Message');
-      
-      // We use $addToSet instead of $push to avoid duplicate read entries
-      // We cast to ObjectId to fix the ELF/ObjectParameterError
       await Message.updateMany(
-        { 
-          chat: new mongoose.Types.ObjectId(chatId), 
-          readBy: { $ne: new mongoose.Types.ObjectId(socket.userId) } 
-        }, 
-        { 
-          $addToSet: { readBy: new mongoose.Types.ObjectId(socket.userId) } 
-        }
+        { chat: new mongoose.Types.ObjectId(chatId), readBy: { $ne: new mongoose.Types.ObjectId(socket.userId) } }, 
+        { $addToSet: { readBy: new mongoose.Types.ObjectId(socket.userId) } }
       );
-
       socket.to(chatId).emit('message read', { chatId, userId: socket.userId });
-    } catch (err) {
-      console.error('message read error', err);
-    }
+    } catch (e) {}
   });
 
   socket.on('disconnect', () => {
-    const uid = socketUser[socket.id];
+    const uid = socket.userId;
     if (uid) {
-      delete onlineUsers[uid];
-      delete socketUser[socket.id];
-      io.emit('user-offline', uid);
+      if (onlineUsers[uid] === socket.id) {
+        delete onlineUsers[uid];
+      }
+
+      setTimeout(async () => {
+        if (!onlineUsers[uid]) {
+          const now = new Date();
+          try {
+            await User.findByIdAndUpdate(uid, { isOnline: false, lastSeen: now });
+            io.emit('user-offline', { userId: uid, lastSeen: now });
+          } catch (err) {
+            console.error("Last seen update failed", err);
+          }
+        }
+      }, 3000); 
     }
-    console.log('Socket disconnected', socket.id);
   });
 });
 
 const PORT = process.env.PORT || 10000;
-httpServer.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
-});
+httpServer.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
