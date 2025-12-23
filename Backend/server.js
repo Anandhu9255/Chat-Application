@@ -64,12 +64,10 @@ io.use(async (socket, next) => {
 
 io.on('connection', (socket) => {
   if (socket.userId) {
-    // UPDATED: Get the full updated user document to ensure sync
     User.findByIdAndUpdate(socket.userId, { isOnline: true }, { new: true })
       .then(user => {
         onlineUsers[socket.userId] = socket.id;
         socket.join(socket.userId);
-        // UPDATED: Use object format to match 'user-offline'
         io.emit('user-online', { userId: socket.userId, isOnline: true });
       })
       .catch(e => console.error("Online update error", e));

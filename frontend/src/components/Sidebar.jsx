@@ -5,151 +5,101 @@ import socket from '../services/socket'
 
 export default function Sidebar({ chats = [], setChats, activeChat, onSelect }){
   const [q, setQ] = useState('')
+  const [searchResults, setSearchResults] = useState([])
   const navigate = useNavigate()
   const me = api.getUserIdFromToken()
 
-  useEffect(()=>{
-    let mounted = true
-    const load = async ()=>{
-      try{
-        const res = await api.get('/chats')
-        if(!mounted) return
-        const normalized = (res.data || []).map(c => ({ ...c, unreadCount: c.unreadCount || 0 }))
-        if(setChats) setChats(normalized)
-      }catch(e){ console.error(e) }
-    }
-    load()
-
-    const onReceive = (message) => {
-      if(!message) return
-      const chatObj = message.chat || message.conversation || message.conversationId
-      const chatId = (chatObj && (chatObj._id || chatObj)) || message.chatId
-      if(!chatId) return
-      setChats(prev => {
-        const existing = prev.find(c => String(c._id) === String(chatId))
-        const others = prev.filter(c => String(c._id) !== String(chatId))
-        if(existing){
-          const updated = { ...existing, latestMessage: message }
-          if(!activeChat || String(activeChat._id) !== String(chatId)) updated.unreadCount = (updated.unreadCount || 0) + 1
-          return [updated, ...others]
-        }
-        const placeholder = { _id: chatId, users: (message.chat && message.chat.users) || [], latestMessage: message, unreadCount: (!activeChat || String(activeChat._id) !== String(chatId)) ? 1 : 0 }
-        return [placeholder, ...prev]
-      })
-    }
-
-    const handleStatusUpdate = (userId, isOnline, lastSeen = null) => {
-      setChats(prev => prev.map(chat => ({
-        ...chat,
-        users: chat.users.map(u => {
-          if (String(u._id) === String(userId)) {
-            return { ...u, isOnline, lastSeen: lastSeen || u.lastSeen };
-          }
-          return u;
-        })
-      })));
+  // Search Logic for all registered users
+  useEffect(() => {
+    const searchUsers = async () => {
+      if (!q.trim()) {
+        setSearchResults([]);
+        return;
+      }
+      try {
+        const res = await api.get(`/users?search=${q}`);
+        setSearchResults(res.data.filter(u => String(u._id) !== String(me)));
+      } catch (e) { console.error(e) }
     };
+    const timer = setTimeout(searchUsers, 300);
+    return () => clearTimeout(timer);
+  }, [q, me]);
 
-    const onUserOnline = (data) => {
-      const uId = typeof data === 'string' ? data : data.userId;
-      handleStatusUpdate(uId, true);
-    }
-    const onUserOffline = ({ userId, lastSeen }) => handleStatusUpdate(userId, false, lastSeen);
-
-    socket.on('receive_message', onReceive)
-    socket.on('user-online', onUserOnline);
-    socket.on('user-offline', onUserOffline);
-
-    return ()=>{
-      mounted = false
-      socket.off('receive_message', onReceive)
-      socket.off('user-online', onUserOnline);
-      socket.off('user-offline', onUserOffline);
-    }
-  }, [setChats, activeChat])
-
-  const handleSelect = (c) => { onSelect && onSelect(c) }
-
-  const filteredChats = chats.filter(c => {
-    const others = (c.users || []).filter(u => String(u._id) !== String(me));
-    const name = others.map(u => u.name).join(', ').toLowerCase();
-    return name.includes(q.toLowerCase());
-  });
+  const startNewChat = async (userId) => {
+    try {
+      const res = await api.post('/chats', { userId });
+      if (!chats.find(c => c._id === res.data._id)) {
+        setChats([res.data, ...chats]);
+      }
+      onSelect(res.data);
+      setQ('');
+    } catch (e) { console.error(e) }
+  };
 
   const getStatusLabel = (u) => {
     if (u?.isOnline) return "online";
-    if (u?.lastSeen) {
-      return new Date(u.lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
+    if (u?.lastSeen) return new Date(u.lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     return "";
   };
 
   return (
-    <aside className="flex h-full w-[350px] md:w-[400px] flex-shrink-0 bg-transparent m-0 p-0">
+    <aside className="flex h-full w-[350px] md:w-[400px] flex-shrink-0 bg-[#111b21] border-r border-gray-700">
       <div className="w-12 bg-[#0f1619] h-full flex flex-col items-center py-3">
         <div className="flex-1" />
-        <button onClick={() => { try{ api.clearToken(); socket && socket.disconnect(); navigate('/login') }catch(e){} }} className="p-2 rounded text-gray-400 hover:text-white" title="Logout">
-          <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M16 13v-2H7V8l-5 4 5 4v-3zM20 3h-8v2h8v14h-8v2h8c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/></svg>
+        <button onClick={() => { api.clearToken(); socket.disconnect(); navigate('/login') }} className="p-2 text-gray-400 hover:text-white">
+          <svg viewBox="0 0 24 24" className="w-6 h-6" fill="currentColor"><path d="M16 13v-2H7V8l-5 4 5 4v-3zM20 3h-8v2h8v14h-8v2h8c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/></svg>
         </button>
       </div>
 
-      <div className="flex-1 bg-[#111b21] h-full flex flex-col border-r border-gray-700">
-        <div className="h-16 flex items-center px-4">
-          <h1 className="text-2xl font-bold text-white tracking-wide">Chats</h1>
-        </div>
-
+      <div className="flex-1 flex flex-col">
+        <div className="h-16 flex items-center px-4"><h1 className="text-xl font-bold text-white">Chats</h1></div>
         <div className="px-3 pb-2">
-          <div className="relative">
-            <input 
-              value={q} 
-              onChange={e=>setQ(e.target.value)} 
-              placeholder="Search or start new chat" 
-              className="w-full p-2 pl-4 rounded-lg bg-[#202c33] text-sm text-gray-300 outline-none placeholder-gray-500" 
-            />
-          </div>
+          <input 
+            value={q} 
+            onChange={e=>setQ(e.target.value)} 
+            placeholder="Search for users..." 
+            className="w-full p-2 rounded-lg bg-[#202c33] text-white outline-none" 
+          />
         </div>
 
-        <div className="flex-1 overflow-y-auto scrollbar-dark">
+        <div className="flex-1 overflow-y-auto">
+          {/* SEARCH RESULTS SECTION */}
+          {q && searchResults.length > 0 && (
+            <div className="bg-[#202c33]/50 mb-2">
+              <p className="px-4 py-2 text-xs text-[#00a884] uppercase font-bold">Global Search</p>
+              {searchResults.map(u => (
+                <div key={u._id} onClick={() => startNewChat(u._id)} className="flex items-center p-3 cursor-pointer hover:bg-[#2a3942]">
+                  <div className="w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center text-white font-bold">{u.name[0].toUpperCase()}</div>
+                  <div className="ml-3 text-white">{u.name}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* CHAT LIST SECTION */}
           <ul className="space-y-0.5">
-            {filteredChats.map(c => {
-              const others = (c.users || []).filter(u => String(u._id) !== String(me))
-              const otherUser = others[0]
-              const name = others.map(u=>u.name).join(', ') || 'Unknown'
-              const last = c.latestMessage
-              const isActive = activeChat && String(activeChat._id) === String(c._id)
-              
+            {chats.filter(c => {
+               const other = c.users.find(u => u._id !== me);
+               return other?.name.toLowerCase().includes(q.toLowerCase());
+            }).map(c => {
+              const otherUser = c.users.find(u => u._id !== me);
+              const isActive = activeChat?._id === c._id;
               return (
-                <li key={c._id} className={`flex items-center cursor-pointer p-3 border-b border-[#202c33]/30 ${isActive ? 'bg-[#2a3942]' : 'hover:bg-[#202c33]'}`} onClick={()=>handleSelect(c)}>
-                  <div className="relative flex-shrink-0">
-                    <div className="w-12 h-12 rounded-full bg-gray-600 flex items-center justify-center text-lg font-bold text-white">
-                      {(name[0] || '?').toUpperCase()}
-                    </div>
-                    {otherUser?.isOnline && (
-                      <div className="absolute bottom-0 right-0 w-3 h-3 bg-[#00a884] border-2 border-[#111b21] rounded-full"></div>
-                    )}
+                <li key={c._id} onClick={()=>onSelect(c)} className={`flex items-center p-3 cursor-pointer border-b border-gray-800/30 ${isActive ? 'bg-[#2a3942]' : 'hover:bg-[#202c33]'}`}>
+                  <div className="relative w-12 h-12 rounded-full bg-gray-600 flex items-center justify-center text-white font-bold">
+                    {otherUser?.name[0].toUpperCase()}
+                    {otherUser?.isOnline && <div className="absolute bottom-0 right-0 w-3 h-3 bg-[#00a884] rounded-full border-2 border-[#111b21]" />}
                   </div>
                   <div className="ml-3 flex-1 min-w-0">
-                    <div className="flex justify-between items-center">
-                      <div className="font-semibold text-[15px] truncate text-white">{name}</div>
-                      <div className="text-[11px] text-gray-400">
-                        {last ? new Date(last.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
-                      </div>
-                    </div>
-                    <div className="flex justify-between items-center mt-0.5">
-                      <div className="text-sm text-gray-400 truncate flex-1">
-                        {last ? last.content : 'No messages yet'}
-                      </div>
-                      {!otherUser?.isOnline && otherUser?.lastSeen && (
-                        <div className="text-[10px] text-gray-500 ml-2">{getStatusLabel(otherUser)}</div>
-                      )}
-                    </div>
+                    <div className="flex justify-between text-white font-semibold"><span>{otherUser?.name}</span></div>
+                    <div className="text-sm text-gray-400 truncate">{c.latestMessage?.content || 'No messages yet'}</div>
                   </div>
                 </li>
-              )
+              );
             })}
           </ul>
         </div>
       </div>
     </aside>
-  )
+  );
 }
