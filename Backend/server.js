@@ -16,6 +16,7 @@ const mongoSanitize = require('express-mongo-sanitize');
 
 // Security middleware (run before routes)
 app.use(helmet());
+// Update: Allows your frontend URL to connect securely
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 app.use(express.json());
 app.use(mongoSanitize());
@@ -34,7 +35,8 @@ app.use('/api/users', userRoutes);
 app.get('/', (req, res) => res.send('Chat backend running'));
 
 const httpServer = http.createServer(app);
-const io = new Server(httpServer, { cors: { origin: '*' } });
+// Update: Uses environment variable for socket security
+const io = new Server(httpServer, { cors: { origin: process.env.CORS_ORIGIN || '*' } });
 
 // make io available to controllers via app.get('io')
 app.set('io', io);
@@ -85,7 +87,6 @@ io.on('connection', (socket) => {
     socket.join(chatId);
   });
 
-  // alias with underscore
   socket.on('join_chat', (chatId) => {
     if (!chatId) return;
     socket.join(chatId);
@@ -98,7 +99,6 @@ io.on('connection', (socket) => {
     try {
       const chatId = (message && (message.chat || message.chatId || message.conversationId));
       if (!chatId) return;
-      // emit a consistent event to the conversation room so all clients in the room receive it
       io.to(String(chatId)).emit('receive_message', message);
     } catch (err) {
       console.error('Socket new message error', err);
@@ -107,8 +107,8 @@ io.on('connection', (socket) => {
 
   socket.on('message read', async (chatId) => {
     try {
-      if (!chat.userId) return;
-      // update DB: mark messages as read for this user
+      // Fix: Updated to check socket.userId correctly
+      if (!socket.userId) return; 
       const Message = require('./models/Message');
       await Message.updateMany({ chat: chatId, readBy: { $ne: socket.userId } }, { $push: { readBy: socket.userId } });
       socket.to(chatId).emit('message read', { chatId, userId: socket.userId });
@@ -128,5 +128,7 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 5000;
-httpServer.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+const PORT = process.env.PORT || 10000;
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
+});
