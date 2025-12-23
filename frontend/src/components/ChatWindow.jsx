@@ -10,18 +10,14 @@ export default function ChatWindow({ chat }) {
 
   const otherUser = chat?.users?.find(u => String(u._id) !== String(currentUserId));
 
-  // 1. Initial Load: Fetch from Database
   useEffect(() => {
     if (!chat?._id) return;
     
     const fetchMessages = async () => {
       try {
         const res = await api.get(`/messages/${chat._id}`);
-        // Handle both Array response and Object {messages: []} response
         const data = Array.isArray(res.data) ? res.data : (res.data.messages || []);
         setMessages(data);
-        
-        // Join the socket room for this chat
         socket.emit('join chat', chat._id);
       } catch (err) {
         console.error("Fetch error:", err);
@@ -31,21 +27,17 @@ export default function ChatWindow({ chat }) {
     fetchMessages();
 
     return () => {
-      setMessages([]); // Clear UI when chat changes
+      setMessages([]); 
     };
   }, [chat?._id]);
 
-  // 2. Real-time Listener: This solves the "Sidebar only" update
   useEffect(() => {
     if (!chat?._id) return;
 
     const handleNewMessage = (msg) => {
       const msgChatId = msg.chat?._id || msg.chat;
-      
-      // Check if this message belongs to the current open window
       if (String(msgChatId) === String(chat._id)) {
         setMessages(prev => {
-          // Prevention guard against duplicate keys
           if (prev.some(m => String(m._id) === String(msg._id))) return prev;
           return [...prev, msg];
         });
@@ -57,30 +49,25 @@ export default function ChatWindow({ chat }) {
     return () => {
       socket.off('receive_message', handleNewMessage);
     };
-  }, [chat?._id]); // Re-bind whenever the active chat ID changes
+  }, [chat?._id]);
 
-  // 3. Send Message
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() || !chat?._id) return;
 
     const messageContent = newMessage;
-    setNewMessage(""); // Clear input immediately for snappy feel
+    setNewMessage(""); 
 
     try {
       const res = await api.post('/messages', { content: messageContent, chatId: chat._id });
-      
-      // BROADCAST: This updates the recipient's window AND the sender's sidebar
       socket.emit('new message', res.data);
-      
-      // LOCAL UPDATE: Add to our own message list if not already added by socket
       setMessages(prev => {
         if (prev.some(m => String(m._id) === String(res.data._id))) return prev;
         return [...prev, res.data];
       });
     } catch (err) {
       console.error("Failed to send:", err);
-      setNewMessage(messageContent); // Put text back if failed
+      setNewMessage(messageContent);
     }
   };
 
@@ -96,18 +83,24 @@ export default function ChatWindow({ chat }) {
 
   return (
     <div className="flex flex-col h-full bg-[#0b141a]">
-      {/* Header */}
       <div className="flex items-center p-3 bg-[#202c33] border-b border-gray-800">
         <div className="w-10 h-10 bg-gray-600 rounded-full flex items-center justify-center text-white font-bold">
           {otherUser?.name?.charAt(0).toUpperCase() || "U"}
         </div>
         <div className="ml-4">
           <h2 className="text-white font-medium">{otherUser?.name || "User"}</h2>
-          {otherUser?.isOnline && <p className="text-[11px] text-[#00a884]">online</p>}
+          {otherUser?.isOnline ? (
+            <p className="text-[11px] text-[#00a884]">online</p>
+          ) : otherUser?.lastSeen ? (
+            <p className="text-[11px] text-gray-400">
+              last seen today at {new Date(otherUser.lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </p>
+          ) : (
+            <p className="text-[11px] text-gray-500">offline</p>
+          )}
         </div>
       </div>
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat">
         {messages.map((m) => {
           const isMe = String(m.sender?._id || m.sender) === String(currentUserId);
@@ -125,7 +118,6 @@ export default function ChatWindow({ chat }) {
         <div ref={scrollRef} />
       </div>
 
-      {/* Footer */}
       <form onSubmit={sendMessage} className="p-3 bg-[#202c33] flex items-center gap-2">
         <input 
           type="text" 

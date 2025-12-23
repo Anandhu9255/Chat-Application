@@ -15,7 +15,6 @@ const jwt = require('jsonwebtoken');
 
 const app = express();
 
-// UPDATED: Specific CORS origins for production and local dev
 const allowedOrigins = [
   "https://chat-application-two-brown.vercel.app",
   "http://localhost:5173"
@@ -39,7 +38,6 @@ app.get('/', (req, res) => res.send('Chat backend running'));
 
 const httpServer = http.createServer(app);
 
-// UPDATED: Socket.io CORS configuration
 const io = new Server(httpServer, { 
   cors: { 
     origin: allowedOrigins,
@@ -66,10 +64,15 @@ io.use(async (socket, next) => {
 
 io.on('connection', (socket) => {
   if (socket.userId) {
-    User.findByIdAndUpdate(socket.userId, { isOnline: true }).catch(e => console.error(e));
-    onlineUsers[socket.userId] = socket.id;
-    socket.join(socket.userId);
-    io.emit('user-online', socket.userId);
+    // UPDATED: Get the full updated user document to ensure sync
+    User.findByIdAndUpdate(socket.userId, { isOnline: true }, { new: true })
+      .then(user => {
+        onlineUsers[socket.userId] = socket.id;
+        socket.join(socket.userId);
+        // UPDATED: Use object format to match 'user-offline'
+        io.emit('user-online', { userId: socket.userId, isOnline: true });
+      })
+      .catch(e => console.error("Online update error", e));
   }
 
   socket.on('request-online-status', () => {
@@ -78,7 +81,7 @@ io.on('connection', (socket) => {
 
   socket.on('setup', (userId) => {
     socket.join(userId);
-    io.emit('user-online', userId);
+    io.emit('user-online', { userId, isOnline: true });
   });
 
   socket.on('join chat', (chatId) => socket.join(chatId));

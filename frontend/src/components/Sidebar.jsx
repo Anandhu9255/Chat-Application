@@ -50,7 +50,10 @@ export default function Sidebar({ chats = [], setChats, activeChat, onSelect }){
       })));
     };
 
-    const onUserOnline = (userId) => handleStatusUpdate(userId, true);
+    const onUserOnline = (data) => {
+      const uId = typeof data === 'string' ? data : data.userId;
+      handleStatusUpdate(uId, true);
+    }
     const onUserOffline = ({ userId, lastSeen }) => handleStatusUpdate(userId, false, lastSeen);
 
     socket.on('receive_message', onReceive)
@@ -72,6 +75,14 @@ export default function Sidebar({ chats = [], setChats, activeChat, onSelect }){
     const name = others.map(u => u.name).join(', ').toLowerCase();
     return name.includes(q.toLowerCase());
   });
+
+  const getStatusLabel = (u) => {
+    if (u?.isOnline) return "online";
+    if (u?.lastSeen) {
+      return new Date(u.lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    return "";
+  };
 
   return (
     <aside className="flex h-full w-[350px] md:w-[400px] flex-shrink-0 bg-transparent m-0 p-0">
@@ -124,8 +135,13 @@ export default function Sidebar({ chats = [], setChats, activeChat, onSelect }){
                         {last ? new Date(last.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
                       </div>
                     </div>
-                    <div className="text-sm text-gray-400 truncate mt-0.5">
-                      {last ? last.content : 'No messages yet'}
+                    <div className="flex justify-between items-center mt-0.5">
+                      <div className="text-sm text-gray-400 truncate flex-1">
+                        {last ? last.content : 'No messages yet'}
+                      </div>
+                      {!otherUser?.isOnline && otherUser?.lastSeen && (
+                        <div className="text-[10px] text-gray-500 ml-2">{getStatusLabel(otherUser)}</div>
+                      )}
                     </div>
                   </div>
                 </li>

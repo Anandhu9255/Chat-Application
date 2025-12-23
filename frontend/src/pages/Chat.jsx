@@ -23,7 +23,6 @@ export default function Chat(){
         const res = await api.get('/chats')
         setChats(res.data)
         
-        // Sync online status as soon as data loads
         if (socket.connected) {
           socket.emit('request-online-status');
         }
@@ -34,7 +33,6 @@ export default function Chat(){
     const userId = api.getUserIdFromToken();
     if(userId) socket.emit('setup', userId);
 
-    // Re-sync whenever the socket connects/reconnects
     const onConnect = () => {
       socket.emit('request-online-status');
       if(userId) socket.emit('setup', userId);
@@ -50,11 +48,13 @@ export default function Chat(){
       })));
     };
 
-    const handleUserOnline = (userId) => {
+    const handleUserOnline = (data) => {
+      // Handle both object {userId} and raw string
+      const uId = typeof data === 'string' ? data : data.userId;
       setChats(prev => prev.map(chat => ({
         ...chat,
         users: chat.users.map(u => 
-          String(u._id) === String(userId) ? { ...u, isOnline: true } : u
+          String(u._id) === String(uId) ? { ...u, isOnline: true } : u
         )
       })));
     };
