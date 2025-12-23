@@ -3,6 +3,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const mongoose = require('mongoose'); // Added for ID casting
 const connectDB = require('./config/db');
 const authRoutes = require('./routes/auth');
 const chatRoutes = require('./routes/chat');
@@ -14,14 +15,12 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const mongoSanitize = require('express-mongo-sanitize');
 
-// Security middleware (run before routes)
+// Security middleware
 app.use(helmet());
-// Update: Allows your frontend URL to connect securely
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 app.use(express.json());
 app.use(mongoSanitize());
 
-// basic rate limiter for API
 const apiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 200 });
 app.use('/api/', apiLimiter);
 
@@ -35,19 +34,16 @@ app.use('/api/users', userRoutes);
 app.get('/', (req, res) => res.send('Chat backend running'));
 
 const httpServer = http.createServer(app);
-// Update: Uses environment variable for socket security
 const io = new Server(httpServer, { cors: { origin: process.env.CORS_ORIGIN || '*' } });
 
-// make io available to controllers via app.get('io')
 app.set('io', io);
 
 const jwt = require('jsonwebtoken');
 const User = require('./models/User');
 
-const onlineUsers = {}; // userId -> socketId
-const socketUser = {}; // socketId -> userId
+const onlineUsers = {}; 
+const socketUser = {}; 
 
-// Socket auth middleware
 io.use(async (socket, next) => {
   try {
     const token = socket.handshake.auth?.token || (socket.handshake.headers && socket.handshake.headers.authorization && socket.handshake.headers.authorization.split(' ')[1]);
@@ -105,12 +101,25 @@ io.on('connection', (socket) => {
     }
   });
 
+  // FIXED: "message read" logic with explicit ObjectId casting
   socket.on('message read', async (chatId) => {
     try {
-      // Fix: Updated to check socket.userId correctly
-      if (!socket.userId) return; 
+      if (!socket.userId || !chatId) return;
+      
       const Message = require('./models/Message');
-      await Message.updateMany({ chat: chatId, readBy: { $ne: socket.userId } }, { $push: { readBy: socket.userId } });
+      
+      // We use $addToSet instead of $push to avoid duplicate read entries
+      // We cast to ObjectId to fix the ELF/ObjectParameterError
+      await Message.updateMany(
+        { 
+          chat: new mongoose.Types.ObjectId(chatId), 
+          readBy: { $ne: new mongoose.Types.ObjectId(socket.userId) } 
+        }, 
+        { 
+          $addToSet: { readBy: new mongoose.Types.ObjectId(socket.userId) } 
+        }
+      );
+
       socket.to(chatId).emit('message read', { chatId, userId: socket.userId });
     } catch (err) {
       console.error('message read error', err);
