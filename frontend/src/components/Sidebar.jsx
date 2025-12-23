@@ -9,7 +9,7 @@ export default function Sidebar({ chats = [], setChats, activeChat, onSelect }){
   const navigate = useNavigate()
   const me = api.getUserIdFromToken()
 
-  // Search Logic for all registered users
+  // GLOBAL SEARCH LOGIC
   useEffect(() => {
     const searchUsers = async () => {
       if (!q.trim()) {
@@ -17,33 +17,35 @@ export default function Sidebar({ chats = [], setChats, activeChat, onSelect }){
         return;
       }
       try {
+        // This matches the 'search' parameter in the controller
         const res = await api.get(`/users?search=${q}`);
-        setSearchResults(res.data.filter(u => String(u._id) !== String(me)));
-      } catch (e) { console.error(e) }
+        setSearchResults(res.data);
+      } catch (e) { 
+        console.error("Search failed", e);
+      }
     };
+
     const timer = setTimeout(searchUsers, 300);
     return () => clearTimeout(timer);
-  }, [q, me]);
+  }, [q]);
 
-  const startNewChat = async (userId) => {
+  const handleSelectSearchResult = async (user) => {
     try {
-      const res = await api.post('/chats', { userId });
-      if (!chats.find(c => c._id === res.data._id)) {
-        setChats([res.data, ...chats]);
+      const res = await api.post('/chats', { userId: user._id });
+      // If this chat isn't in our sidebar list yet, add it
+      if (!chats.find(c => String(c._id) === String(res.data._id))) {
+        setChats(prev => [res.data, ...prev]);
       }
       onSelect(res.data);
-      setQ('');
-    } catch (e) { console.error(e) }
-  };
-
-  const getStatusLabel = (u) => {
-    if (u?.isOnline) return "online";
-    if (u?.lastSeen) return new Date(u.lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    return "";
+      setQ(''); // Clear search box
+    } catch (e) {
+      console.error("Could not start chat", e);
+    }
   };
 
   return (
     <aside className="flex h-full w-[350px] md:w-[400px] flex-shrink-0 bg-[#111b21] border-r border-gray-700">
+      {/* Small Left Icon Bar */}
       <div className="w-12 bg-[#0f1619] h-full flex flex-col items-center py-3">
         <div className="flex-1" />
         <button onClick={() => { api.clearToken(); socket.disconnect(); navigate('/login') }} className="p-2 text-gray-400 hover:text-white">
@@ -51,48 +53,61 @@ export default function Sidebar({ chats = [], setChats, activeChat, onSelect }){
         </button>
       </div>
 
-      <div className="flex-1 flex flex-col">
-        <div className="h-16 flex items-center px-4"><h1 className="text-xl font-bold text-white">Chats</h1></div>
+      {/* Main Sidebar Content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="h-16 flex items-center px-4">
+          <h1 className="text-xl font-bold text-white">Chats</h1>
+        </div>
+
         <div className="px-3 pb-2">
           <input 
             value={q} 
-            onChange={e=>setQ(e.target.value)} 
-            placeholder="Search for users..." 
-            className="w-full p-2 rounded-lg bg-[#202c33] text-white outline-none" 
+            onChange={e => setQ(e.target.value)} 
+            placeholder="Search for people..." 
+            className="w-full p-2 rounded-lg bg-[#202c33] text-white outline-none placeholder-gray-500" 
           />
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          {/* SEARCH RESULTS SECTION */}
-          {q && searchResults.length > 0 && (
-            <div className="bg-[#202c33]/50 mb-2">
-              <p className="px-4 py-2 text-xs text-[#00a884] uppercase font-bold">Global Search</p>
-              {searchResults.map(u => (
-                <div key={u._id} onClick={() => startNewChat(u._id)} className="flex items-center p-3 cursor-pointer hover:bg-[#2a3942]">
-                  <div className="w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center text-white font-bold">{u.name[0].toUpperCase()}</div>
-                  <div className="ml-3 text-white">{u.name}</div>
-                </div>
-              ))}
+        <div className="flex-1 overflow-y-auto scrollbar-dark">
+          {/* SEARCH RESULTS (New Users) */}
+          {q.trim() !== "" && (
+            <div className="bg-[#202c33]/30 mb-2 border-b border-gray-800">
+              <p className="px-4 py-2 text-xs text-[#00a884] uppercase font-bold">New Contacts</p>
+              {searchResults.length > 0 ? (
+                searchResults.map(u => (
+                  <div key={u._id} onClick={() => handleSelectSearchResult(u)} className="flex items-center p-3 cursor-pointer hover:bg-[#2a3942]">
+                    <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold">
+                      {u.name[0].toUpperCase()}
+                    </div>
+                    <div className="ml-3 text-white font-medium">{u.name}</div>
+                  </div>
+                ))
+              ) : (
+                <p className="px-4 py-2 text-sm text-gray-500 italic">No registered users found</p>
+              )}
             </div>
           )}
 
-          {/* CHAT LIST SECTION */}
+          {/* ACTIVE CHATS LIST */}
           <ul className="space-y-0.5">
-            {chats.filter(c => {
-               const other = c.users.find(u => u._id !== me);
-               return other?.name.toLowerCase().includes(q.toLowerCase());
-            }).map(c => {
-              const otherUser = c.users.find(u => u._id !== me);
+            {chats.map(c => {
+              const otherUser = c.users.find(u => String(u._id) !== String(me));
               const isActive = activeChat?._id === c._id;
+              if (!otherUser) return null;
+
               return (
-                <li key={c._id} onClick={()=>onSelect(c)} className={`flex items-center p-3 cursor-pointer border-b border-gray-800/30 ${isActive ? 'bg-[#2a3942]' : 'hover:bg-[#202c33]'}`}>
+                <li key={c._id} onClick={() => onSelect(c)} className={`flex items-center p-3 cursor-pointer ${isActive ? 'bg-[#2a3942]' : 'hover:bg-[#202c33]'}`}>
                   <div className="relative w-12 h-12 rounded-full bg-gray-600 flex items-center justify-center text-white font-bold">
-                    {otherUser?.name[0].toUpperCase()}
-                    {otherUser?.isOnline && <div className="absolute bottom-0 right-0 w-3 h-3 bg-[#00a884] rounded-full border-2 border-[#111b21]" />}
+                    {otherUser.name[0].toUpperCase()}
+                    {otherUser.isOnline && <div className="absolute bottom-0 right-0 w-3 h-3 bg-[#00a884] rounded-full border-2 border-[#111b21]" />}
                   </div>
                   <div className="ml-3 flex-1 min-w-0">
-                    <div className="flex justify-between text-white font-semibold"><span>{otherUser?.name}</span></div>
-                    <div className="text-sm text-gray-400 truncate">{c.latestMessage?.content || 'No messages yet'}</div>
+                    <div className="flex justify-between text-white font-semibold">
+                      <span className="truncate">{otherUser.name}</span>
+                    </div>
+                    <div className="text-sm text-gray-400 truncate">
+                      {c.latestMessage?.content || 'No messages yet'}
+                    </div>
                   </div>
                 </li>
               );
