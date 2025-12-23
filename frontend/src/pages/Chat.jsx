@@ -35,6 +35,7 @@ export default function Chat(){
       if(userId) socket.emit('setup', userId);
     };
 
+    // FIX 1: Update sidebar online status immediately
     const handleUserOnline = (data) => {
       const uId = typeof data === 'string' ? data : data.userId;
       setChats(prev => prev.map(chat => ({
@@ -43,6 +44,7 @@ export default function Chat(){
       })));
     };
 
+    // FIX 2: Update sidebar offline status immediately
     const handleUserOffline = ({ userId, lastSeen }) => {
       setChats(prev => prev.map(chat => ({
         ...chat,
@@ -50,20 +52,28 @@ export default function Chat(){
       })));
     };
     
+    // FIX 3: Update sidebar latest message preview immediately
+    const handleNewMessage = (msg) => {
+      setChats(prev => {
+        const chatId = msg.chat?._id || msg.chat;
+        return prev.map(chat => 
+          String(chat._id) === String(chatId) 
+            ? { ...chat, latestMessage: msg } 
+            : chat
+        );
+      });
+    };
+
     socket.on('connect', onConnect);
     socket.on('user-online', handleUserOnline);
     socket.on('user-offline', handleUserOffline);
-    socket.on('receive_message', (msg) => {
-      setChats(prev => {
-        const chatId = msg.chat?._id || msg.chat;
-        return prev.map(chat => String(chat._id) === String(chatId) ? { ...chat, latestMessage: msg } : chat);
-      });
-    });
+    socket.on('receive_message', handleNewMessage);
 
     return () => {
       socket.off('connect', onConnect);
       socket.off('user-online', handleUserOnline);
       socket.off('user-offline', handleUserOffline);
+      socket.off('receive_message', handleNewMessage);
     }
   },[])
 
