@@ -1,6 +1,5 @@
 import axios from 'axios'
 
-// UPDATED: Now points to your Render backend link
 const API = axios.create({ 
   baseURL: import.meta.env.VITE_API_BASE || 'https://chat-application-7hvg.onrender.com/api' 
 })
