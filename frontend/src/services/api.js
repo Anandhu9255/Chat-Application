@@ -1,23 +1,26 @@
 import axios from 'axios'
 
-const API = axios.create({ baseURL: import.meta.env.VITE_API_BASE || 'http://localhost:5000/api' })
+// UPDATED: Now points to your Render backend link
+const API = axios.create({ 
+  baseURL: import.meta.env.VITE_API_BASE || 'https://chat-application-7hvg.onrender.com/api' 
+})
 
-// Token helpers: prefer sessionStorage (per-tab), fall back to localStorage for existing tokens
 API.getToken = () => {
-  try{
+  try {
     return sessionStorage.getItem('token') || localStorage.getItem('token') || null
-  }catch(e){ return null }
+  } catch(e) { return null }
 }
+
 API.setToken = (token, { persist = true } = {}) => {
-  try{
-    // store in sessionStorage and persist to localStorage by default for refresh resilience
+  try {
     sessionStorage.setItem('token', token)
     if(persist) localStorage.setItem('token', token)
-  }catch(e){}
+  } catch(e) {}
 }
+
 API.clearToken = () => {
-  try{ sessionStorage.removeItem('token') }catch(e){}
-  try{ localStorage.removeItem('token') }catch(e){}
+  try { sessionStorage.removeItem('token') } catch(e) {}
+  try { localStorage.removeItem('token') } catch(e) {}
 }
 
 API.interceptors.request.use(cfg => {
@@ -26,13 +29,13 @@ API.interceptors.request.use(cfg => {
   return cfg
 })
 
-API.getUserIdFromToken = ()=>{
-  try{
+API.getUserIdFromToken = () => {
+  try {
     const token = API.getToken()
     if(!token) return null
     const payload = JSON.parse(atob(token.split('.')[1]))
     return payload.id
-  }catch(e){ return null }
+  } catch(e) { return null }
 }
 
 export default API

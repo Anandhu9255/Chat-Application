@@ -14,7 +14,18 @@ const Message = require('./models/Message');
 const jwt = require('jsonwebtoken');
 
 const app = express();
-app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
+
+// UPDATED: Specific CORS origins for production and local dev
+const allowedOrigins = [
+  "https://chat-application-two-brown.vercel.app",
+  "http://localhost:5173"
+];
+
+app.use(cors({ 
+  origin: allowedOrigins,
+  credentials: true 
+}));
+
 app.use(express.json());
 
 connectDB();
@@ -27,7 +38,16 @@ app.use('/api/users', userRoutes);
 app.get('/', (req, res) => res.send('Chat backend running'));
 
 const httpServer = http.createServer(app);
-const io = new Server(httpServer, { cors: { origin: process.env.CORS_ORIGIN || '*' } });
+
+// UPDATED: Socket.io CORS configuration
+const io = new Server(httpServer, { 
+  cors: { 
+    origin: allowedOrigins,
+    methods: ["GET", "POST"],
+    credentials: true
+  } 
+});
+
 app.set('io', io);
 
 const onlineUsers = {}; 
@@ -49,19 +69,15 @@ io.on('connection', (socket) => {
     User.findByIdAndUpdate(socket.userId, { isOnline: true }).catch(e => console.error(e));
     onlineUsers[socket.userId] = socket.id;
     socket.join(socket.userId);
-    
-    // Broadcast to EVERYONE that I am online
     io.emit('user-online', socket.userId);
   }
 
-  // Answer requests for the full online list
   socket.on('request-online-status', () => {
     socket.emit('online-users-list', Object.keys(onlineUsers));
   });
 
   socket.on('setup', (userId) => {
     socket.join(userId);
-    // Double-check broadcast when setup is called
     io.emit('user-online', userId);
   });
 
