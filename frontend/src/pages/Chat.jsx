@@ -35,7 +35,6 @@ export default function Chat(){
       if(userId) socket.emit('setup', userId);
     };
 
-    // FIX 1: Update sidebar online status immediately
     const handleUserOnline = (data) => {
       const uId = typeof data === 'string' ? data : data.userId;
       setChats(prev => prev.map(chat => ({
@@ -44,7 +43,6 @@ export default function Chat(){
       })));
     };
 
-    // FIX 2: Update sidebar offline status immediately
     const handleUserOffline = ({ userId, lastSeen }) => {
       setChats(prev => prev.map(chat => ({
         ...chat,
@@ -52,15 +50,26 @@ export default function Chat(){
       })));
     };
     
-    // FIX 3: Update sidebar latest message preview immediately
+    // FULLY FIXED: Updates Sidebar content AND moves chat to the top
     const handleNewMessage = (msg) => {
       setChats(prev => {
         const chatId = msg.chat?._id || msg.chat;
-        return prev.map(chat => 
-          String(chat._id) === String(chatId) 
-            ? { ...chat, latestMessage: msg } 
-            : chat
-        );
+        const existingChatIndex = prev.findIndex(c => String(c._id) === String(chatId));
+
+        if (existingChatIndex !== -1) {
+          const updatedChats = [...prev];
+          // Update the message text
+          updatedChats[existingChatIndex] = {
+            ...updatedChats[existingChatIndex],
+            latestMessage: msg,
+            updatedAt: new Date().toISOString()
+          };
+
+          // MOVE TO TOP: Remove from current position and put at index 0
+          const [movedChat] = updatedChats.splice(existingChatIndex, 1);
+          return [movedChat, ...updatedChats];
+        }
+        return prev;
       });
     };
 
