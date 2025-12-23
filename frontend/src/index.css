@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 1. FORCE THE ENTIRE PAGE TO BE EDGE-TO-EDGE */
+@layer base {
+  /* This removes the gaps 1 and 2 by forcing html/body to 0 margin */
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden; /* Prevents the whole screen from scrolling */
+    background-color: #0b141a; /* Dark WhatsApp background */
+  }
+
+  /* This ensures the React container fills the entire screen */
+  #root {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    display: flex; /* Helps children fill space */
+  }
+
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  body {
+    color: #e5e7eb;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  }
+}
+
+/* 2. CUSTOM SCROLLBARS (Prevents Gap 3 white lines) */
+/* This makes scrollbars look like the dark WhatsApp ones */
+.scrollbar-dark::-webkit-scrollbar {
+  width: 6px; /* Narrower for a cleaner look */
+}
+
+.scrollbar-dark::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-dark::-webkit-scrollbar-thumb {
+  background-color: #374151; /* Subtle gray */
+  border-radius: 10px;
+}
+
+.scrollbar-dark::-webkit-scrollbar-thumb:hover {
+  background-color: #4b5563;
+}
+
+/* Firefox Support */
+.scrollbar-dark {
+  scrollbar-width: thin;
+  scrollbar-color: #374151 transparent;
+}
+
+/* 3. GLOBAL UTILITY FOR CLEAN LAYOUT */
+.no-select {
+  user-select: none;
+}

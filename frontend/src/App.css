@@ -1,0 +1,17 @@
+/* Ensure the root stays full screen for the chat */
+#root {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+/* Add this class to center your Login/Register cards */
+.auth-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  width: 100vw;
+  background-color: #0b141a; /* Matches your theme */
+}
