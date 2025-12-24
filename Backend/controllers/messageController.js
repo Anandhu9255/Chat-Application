@@ -23,7 +23,7 @@ exports.sendMessage = async (req, res) => {
     const { chatId, content } = req.body;
     if (!chatId || !content) return res.status(400).json({ message: 'chatId and content required' });
 
-    // 1. Create and Save Message
+    // 1. Save the new message
     let message = new Message({ 
       chat: chatId, 
       sender: req.user._id || req.user.id, 
@@ -31,14 +31,15 @@ exports.sendMessage = async (req, res) => {
     });
     await message.save();
 
-    // 2. Update Chat's latestMessage reference and timestamp
-    // This is crucial for the Sidebar to show the correct text after refresh
-    await Chat.findByIdAndUpdate(chatId, { 
-      latestMessage: message._id, 
-      updatedAt: Date.now() 
-    });
+    // 2. CRITICAL: Update the Chat document's latestMessage and updatedAt timestamp
+    // This ensures that when the sidebar refreshes, it sorts correctly
+    const updatedChat = await Chat.findByIdAndUpdate(
+      chatId, 
+      { latestMessage: message._id, updatedAt: new Date() },
+      { new: true }
+    );
 
-    // 3. Fully populate the message to send back to UI
+    // 3. Populate everything for a perfect UI update
     const populated = await Message.findById(message._id)
       .populate('sender', '-password')
       .populate({ 
@@ -50,14 +51,12 @@ exports.sendMessage = async (req, res) => {
     try {
       const io = req.app.get('io');
       if (io && populated && populated.chat) {
-        // Emit to the specific chat room
+        // Broadcast to the chat room
         io.to(chatId.toString()).emit('receive_message', populated);
 
-        // Emit to participants to trigger their sidebar updates
+        // Explicitly notify each user's personal room to force sidebar jump
         populated.chat.users.forEach(user => {
-          if (String(user._id) !== String(req.user._id || req.user.id)) {
-            io.to(String(user._id)).emit('receive_message', populated);
-          }
+          io.to(String(user._id)).emit('receive_message', populated);
         });
       }
     } catch (emitErr) {

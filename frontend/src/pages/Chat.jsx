@@ -21,7 +21,7 @@ export default function Chat(){
     const init = async()=>{
       try{
         const res = await api.get('/chats')
-        // Sort by updatedAt initially so latest is at top
+        // Initial Sort: Newest updatedAt at the top
         const sorted = res.data.sort((a,b) => new Date(b.updatedAt) - new Date(a.updatedAt));
         setChats(sorted)
         if (socket.connected) socket.emit('request-online-status');
@@ -52,31 +52,27 @@ export default function Chat(){
       })));
     };
     
-    // THE FIX: Move chat to top AND update message content
+    // WHATSAPP STYLE UPDATE: Move to Top + Update Text
     const handleNewMessage = (msg) => {
       setChats(prev => {
         const chatId = msg.chat?._id || msg.chat;
         const existingChatIndex = prev.findIndex(c => String(c._id) === String(chatId));
 
         if (existingChatIndex !== -1) {
-          const updatedChats = [...prev];
-          
-          // Create the updated chat object
+          const updatedList = [...prev];
+          // Update the message and timestamp
           const updatedChat = {
-            ...updatedChats[existingChatIndex],
+            ...updatedList[existingChatIndex],
             latestMessage: msg,
             updatedAt: new Date().toISOString()
           };
-
-          // Remove it from its old position
-          updatedChats.splice(existingChatIndex, 1);
-
-          // Put it at the very top (WhatsApp style)
-          return [updatedChat, ...updatedChats];
+          // Remove from old position and put at the very top (index 0)
+          updatedList.splice(existingChatIndex, 1);
+          return [updatedChat, ...updatedList];
         } else {
-          // If it's a brand new chat that wasn't in sidebar yet
+          // If brand new chat, add it to the top
           if (msg.chat && typeof msg.chat === 'object') {
-            return [{ ...msg.chat, latestMessage: msg }, ...prev];
+            return [{ ...msg.chat, latestMessage: msg, updatedAt: new Date().toISOString() }, ...prev];
           }
         }
         return prev;

@@ -6,7 +6,7 @@ const chatSchema = new mongoose.Schema(
     users: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     latestMessage: { type: mongoose.Schema.Types.ObjectId, ref: 'Message' }
   },
-  { timestamps: true }
+  { timestamps: true } // This creates and manages 'updatedAt' for us
 );
 
 module.exports = mongoose.model('Chat', chatSchema);
