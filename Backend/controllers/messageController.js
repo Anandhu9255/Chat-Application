@@ -23,7 +23,7 @@ exports.sendMessage = async (req, res) => {
     const { chatId, content } = req.body;
     if (!chatId || !content) return res.status(400).json({ message: 'chatId and content required' });
 
-    // 1. Create and Save Message
+    // 1. Save new message
     const message = new Message({ 
       chat: chatId, 
       sender: req.user._id || req.user.id, 
@@ -31,7 +31,7 @@ exports.sendMessage = async (req, res) => {
     });
     await message.save();
 
-    // 2. Populate fully before emitting and updating chat
+    // 2. Populate fully
     const populated = await Message.findById(message._id)
       .populate('sender', '-password')
       .populate({ 
@@ -39,20 +39,20 @@ exports.sendMessage = async (req, res) => {
         populate: { path: 'users', select: '-password' } 
       });
 
-    // 3. Update Chat's latestMessage to the FULL object/id
+    // 3. CRITICAL: Update the Chat document with this message as the latest
     await Chat.findByIdAndUpdate(chatId, { 
       latestMessage: populated._id, 
       updatedAt: Date.now() 
     });
 
-    // 4. Socket Emission
+    // 4. Emit via Socket
     try {
       const io = req.app.get('io');
       if (io && populated && populated.chat) {
-        // Emit to the room for Chat Window
+        // Send to chat room
         io.to(chatId.toString()).emit('receive_message', populated);
 
-        // Emit to participants for Sidebar Update
+        // Send to individual users for sidebar update
         populated.chat.users.forEach(user => {
           if (String(user._id) !== String(req.user._id || req.user.id)) {
             io.to(String(user._id)).emit('receive_message', populated);

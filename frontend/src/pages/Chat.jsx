@@ -50,7 +50,7 @@ export default function Chat(){
       })));
     };
     
-    // FULLY FIXED: Updates Sidebar content AND moves chat to the top
+    // UPDATED: Forces sidebar to refresh message and move chat to top
     const handleNewMessage = (msg) => {
       setChats(prev => {
         const chatId = msg.chat?._id || msg.chat;
@@ -58,14 +58,14 @@ export default function Chat(){
 
         if (existingChatIndex !== -1) {
           const updatedChats = [...prev];
-          // Update the message text
+          // Update message content
           updatedChats[existingChatIndex] = {
             ...updatedChats[existingChatIndex],
             latestMessage: msg,
             updatedAt: new Date().toISOString()
           };
 
-          // MOVE TO TOP: Remove from current position and put at index 0
+          // Re-order: Move this chat to the top
           const [movedChat] = updatedChats.splice(existingChatIndex, 1);
           return [movedChat, ...updatedChats];
         }
