@@ -23,7 +23,7 @@ exports.sendMessage = async (req, res) => {
     const { chatId, content } = req.body;
     if (!chatId || !content) return res.status(400).json({ message: 'chatId and content required' });
 
-    // 1. Save the new message
+    // 1. Save the new message in backend
     let message = new Message({ 
       chat: chatId, 
       sender: req.user._id || req.user.id, 
@@ -31,15 +31,15 @@ exports.sendMessage = async (req, res) => {
     });
     await message.save();
 
-    // 2. CRITICAL: Update the Chat document's latestMessage and updatedAt timestamp
-    // This ensures that when the sidebar refreshes, it sorts correctly
+    // 2. BACKEND OPERATION: Update Chat model's latest message and timestamp
+    // This is critical for the "Jump to Top" logic to persist on refresh
     const updatedChat = await Chat.findByIdAndUpdate(
       chatId, 
       { latestMessage: message._id, updatedAt: new Date() },
       { new: true }
     );
 
-    // 3. Populate everything for a perfect UI update
+    // 3. Populate for UI update
     const populated = await Message.findById(message._id)
       .populate('sender', '-password')
       .populate({ 
@@ -47,14 +47,12 @@ exports.sendMessage = async (req, res) => {
         populate: { path: 'users', select: '-password' } 
       });
 
-    // 4. Socket Emission
+    // 4. Socket Emission to all participants
     try {
       const io = req.app.get('io');
       if (io && populated && populated.chat) {
-        // Broadcast to the chat room
         io.to(chatId.toString()).emit('receive_message', populated);
 
-        // Explicitly notify each user's personal room to force sidebar jump
         populated.chat.users.forEach(user => {
           io.to(String(user._id)).emit('receive_message', populated);
         });

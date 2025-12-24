@@ -9,7 +9,6 @@ export default function Sidebar({ chats = [], setChats, activeChat, onSelect }){
   const navigate = useNavigate()
   const me = api.getUserIdFromToken()
 
-  // GLOBAL SEARCH LOGIC
   useEffect(() => {
     const searchUsers = async () => {
       if (!q.trim()) {
@@ -17,14 +16,12 @@ export default function Sidebar({ chats = [], setChats, activeChat, onSelect }){
         return;
       }
       try {
-        // This matches the 'search' parameter in the controller
         const res = await api.get(`/users?search=${q}`);
         setSearchResults(res.data);
       } catch (e) { 
         console.error("Search failed", e);
       }
     };
-
     const timer = setTimeout(searchUsers, 300);
     return () => clearTimeout(timer);
   }, [q]);
@@ -32,12 +29,11 @@ export default function Sidebar({ chats = [], setChats, activeChat, onSelect }){
   const handleSelectSearchResult = async (user) => {
     try {
       const res = await api.post('/chats', { userId: user._id });
-      // If this chat isn't in our sidebar list yet, add it
       if (!chats.find(c => String(c._id) === String(res.data._id))) {
         setChats(prev => [res.data, ...prev]);
       }
       onSelect(res.data);
-      setQ(''); // Clear search box
+      setQ(''); 
     } catch (e) {
       console.error("Could not start chat", e);
     }
@@ -45,7 +41,6 @@ export default function Sidebar({ chats = [], setChats, activeChat, onSelect }){
 
   return (
     <aside className="flex h-full w-[350px] md:w-[400px] flex-shrink-0 bg-[#111b21] border-r border-gray-700">
-      {/* Small Left Icon Bar */}
       <div className="w-12 bg-[#0f1619] h-full flex flex-col items-center py-3">
         <div className="flex-1" />
         <button onClick={() => { api.clearToken(); socket.disconnect(); navigate('/login') }} className="p-2 text-gray-400 hover:text-white">
@@ -53,7 +48,6 @@ export default function Sidebar({ chats = [], setChats, activeChat, onSelect }){
         </button>
       </div>
 
-      {/* Main Sidebar Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="h-16 flex items-center px-4">
           <h1 className="text-xl font-bold text-white">Chats</h1>
@@ -69,7 +63,6 @@ export default function Sidebar({ chats = [], setChats, activeChat, onSelect }){
         </div>
 
         <div className="flex-1 overflow-y-auto scrollbar-dark">
-          {/* SEARCH RESULTS (New Users) */}
           {q.trim() !== "" && (
             <div className="bg-[#202c33]/30 mb-2 border-b border-gray-800">
               <p className="px-4 py-2 text-xs text-[#00a884] uppercase font-bold">New Contacts</p>
@@ -88,7 +81,6 @@ export default function Sidebar({ chats = [], setChats, activeChat, onSelect }){
             </div>
           )}
 
-          {/* ACTIVE CHATS LIST */}
           <ul className="space-y-0.5">
             {chats.map(c => {
               const otherUser = c.users.find(u => String(u._id) !== String(me));
@@ -106,6 +98,7 @@ export default function Sidebar({ chats = [], setChats, activeChat, onSelect }){
                       <span className="truncate">{otherUser.name}</span>
                     </div>
                     <div className="text-sm text-gray-400 truncate">
+                      {/* This will now update instantly because handleNewMessage in Chat.jsx updates the 'chats' state */}
                       {c.latestMessage?.content || 'No messages yet'}
                     </div>
                   </div>

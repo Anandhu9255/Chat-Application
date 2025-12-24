@@ -52,7 +52,7 @@ export default function Chat(){
       })));
     };
     
-    // WHATSAPP STYLE UPDATE: Move to Top + Update Text
+    // THE FIX: Moves the specific chat to Index 0 and updates the preview text
     const handleNewMessage = (msg) => {
       setChats(prev => {
         const chatId = msg.chat?._id || msg.chat;
@@ -60,17 +60,16 @@ export default function Chat(){
 
         if (existingChatIndex !== -1) {
           const updatedList = [...prev];
-          // Update the message and timestamp
           const updatedChat = {
             ...updatedList[existingChatIndex],
             latestMessage: msg,
             updatedAt: new Date().toISOString()
           };
-          // Remove from old position and put at the very top (index 0)
+          // Move to top of the list
           updatedList.splice(existingChatIndex, 1);
           return [updatedChat, ...updatedList];
         } else {
-          // If brand new chat, add it to the top
+          // If it's a new chat initialization
           if (msg.chat && typeof msg.chat === 'object') {
             return [{ ...msg.chat, latestMessage: msg, updatedAt: new Date().toISOString() }, ...prev];
           }
