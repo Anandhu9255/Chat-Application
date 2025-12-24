@@ -21,7 +21,6 @@ export default function Chat(){
     const init = async()=>{
       try{
         const res = await api.get('/chats')
-        // Initial Sort: Newest updatedAt at the top
         const sorted = res.data.sort((a,b) => new Date(b.updatedAt) - new Date(a.updatedAt));
         setChats(sorted)
         if (socket.connected) socket.emit('request-online-status');
@@ -52,7 +51,6 @@ export default function Chat(){
       })));
     };
     
-    // THE FIX: Moves the specific chat to Index 0 and updates the preview text
     const handleNewMessage = (msg) => {
       setChats(prev => {
         const chatId = msg.chat?._id || msg.chat;
@@ -65,14 +63,10 @@ export default function Chat(){
             latestMessage: msg,
             updatedAt: new Date().toISOString()
           };
-          // Move to top of the list
           updatedList.splice(existingChatIndex, 1);
           return [updatedChat, ...updatedList];
-        } else {
-          // If it's a new chat initialization
-          if (msg.chat && typeof msg.chat === 'object') {
-            return [{ ...msg.chat, latestMessage: msg, updatedAt: new Date().toISOString() }, ...prev];
-          }
+        } else if (msg.chat && typeof msg.chat === 'object') {
+          return [{ ...msg.chat, latestMessage: msg, updatedAt: new Date().toISOString() }, ...prev];
         }
         return prev;
       });
@@ -99,6 +93,7 @@ export default function Chat(){
         activeChat={activeChat} 
         onSelect={(c)=>{
           setActiveChatId(c._id)
+          socket.emit('join chat', c._id); // Join room immediately on select
           socket.emit('message read', c._id)
         }} 
       />

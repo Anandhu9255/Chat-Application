@@ -63,11 +63,13 @@ io.use(async (socket, next) => {
 });
 
 io.on('connection', (socket) => {
+  // 1. Join personal room immediately
   if (socket.userId) {
+    socket.join(socket.userId);
+    onlineUsers[socket.userId] = socket.id;
+    
     User.findByIdAndUpdate(socket.userId, { isOnline: true }, { new: true })
-      .then(user => {
-        onlineUsers[socket.userId] = socket.id;
-        socket.join(socket.userId);
+      .then(() => {
         io.emit('user-online', { userId: socket.userId, isOnline: true });
       })
       .catch(e => console.error("Online update error", e));
@@ -82,34 +84,35 @@ io.on('connection', (socket) => {
     io.emit('user-online', { userId, isOnline: true });
   });
 
-  socket.on('join chat', (chatId) => socket.join(chatId));
+  socket.on('join chat', (chatId) => {
+    socket.join(chatId);
+  });
   
   socket.on('typing', (chatId) => socket.to(chatId).emit('typing', chatId));
   socket.on('stop typing', (chatId) => socket.to(chatId).emit('stop typing', chatId));
 
+  // 2. Centralized message handler
   socket.on('new message', (message) => {
-    const chatId = message.chat?._id || message.chat;
-    if (chatId) io.to(String(chatId)).emit('receive_message', message);
-  });
+    const chat = message.chat;
+    if (!chat || !chat.users) return;
 
-  socket.on('message read', async (chatId) => {
-    try {
-      if (!socket.userId || !chatId) return;
-      await Message.updateMany(
-        { chat: new mongoose.Types.ObjectId(chatId), readBy: { $ne: new mongoose.Types.ObjectId(socket.userId) } }, 
-        { $addToSet: { readBy: new mongoose.Types.ObjectId(socket.userId) } }
-      );
-      socket.to(chatId).emit('message read', { chatId, userId: socket.userId });
-    } catch (e) {}
+    // Send to everyone in the chat room (including sender's other tabs)
+    const chatId = chat._id || chat;
+    socket.to(String(chatId)).emit('receive_message', message);
+    
+    // Also notify users directly via their personal rooms to update sidebars
+    chat.users.forEach(user => {
+      const targetId = user._id || user;
+      if (targetId !== message.sender._id) {
+        io.to(String(targetId)).emit('receive_message', message);
+      }
+    });
   });
 
   socket.on('disconnect', () => {
     const uid = socket.userId;
     if (uid) {
-      if (onlineUsers[uid] === socket.id) {
-        delete onlineUsers[uid];
-      }
-
+      delete onlineUsers[uid];
       setTimeout(async () => {
         if (!onlineUsers[uid]) {
           const now = new Date();

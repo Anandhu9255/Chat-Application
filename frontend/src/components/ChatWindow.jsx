@@ -18,12 +18,19 @@ export default function ChatWindow({ chat }) {
   }, [chat?._id]);
 
   useEffect(() => {
-    socket.on('receive_message', (msg) => {
-      if (String(msg.chat?._id || msg.chat) === String(chat?._id)) {
-        setMessages(prev => prev.some(m => m._id === msg._id) ? prev : [...prev, msg]);
+    const handleMessage = (msg) => {
+      const msgChatId = msg.chat?._id || msg.chat;
+      if (String(msgChatId) === String(chat?._id)) {
+        setMessages(prev => {
+          // Check if message already exists to avoid duplication
+          if (prev.some(m => m._id === msg._id)) return prev;
+          return [...prev, msg];
+        });
       }
-    });
-    return () => socket.off('receive_message');
+    };
+
+    socket.on('receive_message', handleMessage);
+    return () => socket.off('receive_message', handleMessage);
   }, [chat?._id]);
 
   const sendMessage = async (e) => {
@@ -31,20 +38,24 @@ export default function ChatWindow({ chat }) {
     if (!newMessage.trim()) return;
     try {
       const res = await api.post('/messages', { content: newMessage, chatId: chat._id });
+      // 1. Update local UI immediately
+      setMessages(prev => [...prev, res.data]);
+      // 2. Notify socket so OTHER user sees it real-time
       socket.emit('new message', res.data);
-      setMessages([...messages, res.data]);
       setNewMessage("");
     } catch (e) { console.error(e) }
   };
 
-  useEffect(() => scrollRef.current?.scrollIntoView({ behavior: "smooth" }), [messages]);
+  useEffect(() => {
+    scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   if (!chat) return <div className="flex-1 flex items-center justify-center text-gray-500">Select a chat</div>;
 
   return (
     <div className="flex flex-col h-full bg-[#0b141a]">
       <div className="flex items-center p-3 bg-[#202c33]">
-        <div className="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center text-white font-bold">{otherUser?.name[0].toUpperCase()}</div>
+        <div className="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center text-white font-bold">{otherUser?.name?.[0]?.toUpperCase()}</div>
         <div className="ml-4">
           <h2 className="text-white font-medium">{otherUser?.name}</h2>
           <p className={`text-[11px] ${otherUser?.isOnline ? 'text-[#00a884]' : 'text-gray-400'}`}>
