@@ -23,15 +23,22 @@ exports.sendMessage = async (req, res) => {
     const { chatId, content } = req.body;
     if (!chatId || !content) return res.status(400).json({ message: 'chatId and content required' });
 
-    // 1. Save new message
-    const message = new Message({ 
+    // 1. Create and Save Message
+    let message = new Message({ 
       chat: chatId, 
       sender: req.user._id || req.user.id, 
       content 
     });
     await message.save();
 
-    // 2. Populate fully
+    // 2. Update Chat's latestMessage reference and timestamp
+    // This is crucial for the Sidebar to show the correct text after refresh
+    await Chat.findByIdAndUpdate(chatId, { 
+      latestMessage: message._id, 
+      updatedAt: Date.now() 
+    });
+
+    // 3. Fully populate the message to send back to UI
     const populated = await Message.findById(message._id)
       .populate('sender', '-password')
       .populate({ 
@@ -39,20 +46,14 @@ exports.sendMessage = async (req, res) => {
         populate: { path: 'users', select: '-password' } 
       });
 
-    // 3. CRITICAL: Update the Chat document with this message as the latest
-    await Chat.findByIdAndUpdate(chatId, { 
-      latestMessage: populated._id, 
-      updatedAt: Date.now() 
-    });
-
-    // 4. Emit via Socket
+    // 4. Socket Emission
     try {
       const io = req.app.get('io');
       if (io && populated && populated.chat) {
-        // Send to chat room
+        // Emit to the specific chat room
         io.to(chatId.toString()).emit('receive_message', populated);
 
-        // Send to individual users for sidebar update
+        // Emit to participants to trigger their sidebar updates
         populated.chat.users.forEach(user => {
           if (String(user._id) !== String(req.user._id || req.user.id)) {
             io.to(String(user._id)).emit('receive_message', populated);

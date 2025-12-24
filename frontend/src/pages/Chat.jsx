@@ -21,7 +21,9 @@ export default function Chat(){
     const init = async()=>{
       try{
         const res = await api.get('/chats')
-        setChats(res.data)
+        // Sort by updatedAt initially so latest is at top
+        const sorted = res.data.sort((a,b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+        setChats(sorted)
         if (socket.connected) socket.emit('request-online-status');
       }catch(err){ console.error(err) }
     }
@@ -50,7 +52,7 @@ export default function Chat(){
       })));
     };
     
-    // UPDATED: Forces sidebar to refresh message and move chat to top
+    // THE FIX: Move chat to top AND update message content
     const handleNewMessage = (msg) => {
       setChats(prev => {
         const chatId = msg.chat?._id || msg.chat;
@@ -58,16 +60,24 @@ export default function Chat(){
 
         if (existingChatIndex !== -1) {
           const updatedChats = [...prev];
-          // Update message content
-          updatedChats[existingChatIndex] = {
+          
+          // Create the updated chat object
+          const updatedChat = {
             ...updatedChats[existingChatIndex],
             latestMessage: msg,
             updatedAt: new Date().toISOString()
           };
 
-          // Re-order: Move this chat to the top
-          const [movedChat] = updatedChats.splice(existingChatIndex, 1);
-          return [movedChat, ...updatedChats];
+          // Remove it from its old position
+          updatedChats.splice(existingChatIndex, 1);
+
+          // Put it at the very top (WhatsApp style)
+          return [updatedChat, ...updatedChats];
+        } else {
+          // If it's a brand new chat that wasn't in sidebar yet
+          if (msg.chat && typeof msg.chat === 'object') {
+            return [{ ...msg.chat, latestMessage: msg }, ...prev];
+          }
         }
         return prev;
       });
